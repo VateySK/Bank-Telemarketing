@@ -1,0 +1,836 @@
+---
+title: "Bank Marketing Project"
+author: "Keavatey Srun,Dilanka Wijeratne,Sai Vignesvar"
+date: "9/23/2020"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+\newpage
+
+\tableofcontents
+
+\newpage
+
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+# 1. Introduction
+
+The finance industry is one of the sectors that is being influenced most by the recent developments in the field of data analysis. Data Analysis can be a useful method for delivering greater profits, whether predicting asset prices, or in our case predicting whether a consumer will contribute to a term deposit.
+
+This project aims to apply categorical analysis to predict the success of bank telemarketing. 
+
+To do this, we are going to use the *direct marketing campaign data* from UCI Machine Learning Repository called the Bank Marketing Data Set. 
+
+The marketing campaigns were based on direct phone calls. Often, *more than one contact* to the same client was required, in order to access if the product (bank term deposit) would be subscribed or not.
+
+The aim of this project to apply categorical data analysis to predict the success of bank telemarketing.
+
+To achieve that, first we needed to examine the different relationships between factor variables that might or might not play a crucial role in predicting the success or failure of the marketing effort. After analyzing the data, different models of logistic regression were fitted and compared to determine the best model to **predict** if a client may subscribe to a fixed term deposit. Each logistic regression model was formulated to predict the probability of the success of the marketing campaign given a combination of several factors.
+
+Logistic regression model was used, as the response variable *y* is a binary response variable with levels *yes and no*.
+
+For efficiency, the subset data of 5000 rows was used in the analysis instead of the whole original data.
+
+We initially tried manual model fitting with all the variables. After which we performed feature selection to reduce the number of independent variables using Learning Vector Quantization (LVQ) model. Then model selection was performed with the 15 most important features using genetic Search and forward selection methods. The models obtained in the previous steps were compared and the best among them was chosen.
+
+# 2. Data source
+The data is sourced from <https://raw.githubusercontent.com/vaksakalli/datasets/master/bank_marketing_full.csv>. This dataset consists of 41,188 entries of the direct marketing campaigns of a Portuguese banking institution.
+
+## Data Summary:
+There are 20 explanatory observations containing 4 types of client data:  
+1. **Bank Client Data**: age, job, marital status, education, default, housing and loan  
+2. **Telemarketing data**: contact, month, day of the week, and duration  
+3. **Socioeconomic data**: employment variation rate, consumer price index, consumer confidence index, 3 month Euribor rate, and number of employees  
+4. **Other data**: campaign, past days, previous, and past outcome  
+
+
+## Data Description:
+
+#### Bank Client Data:
+1. **age** : person's age in numerical value
+2. **job** : type of job (categorical: 'admin.','blue-collar','entrepreneur','housemaid','management','retired','self-employed','services','student','technician','unemployed','unknown')
+3. **marital** : marital status (categorical: 'divorced','married','single','unknown'; note: 'divorced' means divorced or widowed)
+4. **education** :(categorical)'basic.4y','basic.6y','basic.9y','high.school','illiterate','professional.course','university.degree','unknown')
+5. **default**: has credit in default? (categorical: 'no','yes','unknown')
+6. **housing**: has housing loan? (categorical: 'no','yes','unknown')
+7. **loan**: has personal loan? (categorical: 'no','yes','unknown')
+
+#### Telemarketing Dat:
+8. **contact**: contact communication type (categorical: 'cellular','telephone')
+9. **month**: last contact month of year (categorical: 'jan', 'feb', 'mar', ..., 'nov', 'dec')
+10. **day_of_week**: last contact day of the week (categorical: 'mon','tue','wed','thu','fri')
+11. **duration**: last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+
+#### Other Data:
+12. **campaign**: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+13. **pdays**: number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)
+14. **previous**: number of contacts performed before this campaign and for this client (numeric)
+15. **poutcome**: outcome of the previous marketing campaign (categorical: 'failure','nonexistent','success')
+
+#### Socioeconomic Data:
+16. **emp.var.rate**: employment variation rate - quarterly indicator (numeric)
+17. **cons.price.idx**: consumer price index - monthly indicator (numeric)
+18. **cons.conf.idx**: consumer confidence index - monthly indicator (numeric)
+19. **euribor3m**: euribor 3 month rate - daily indicator (numeric)
+20. **nr.employed**: number of employees - quarterly indicator (numeric)
+
+#### Output variable (desired target):
+21.  **y** - has the client subscribed a term deposit? (binary: 'yes','no')
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 3. Data Pre-processing
+## Loading pakages
+``````{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(summarytools)
+library(ggmosaic)
+library(splitstackshape)
+library(glmulti)
+library(car)
+library(spFSR)
+
+SummaryStats <- function(x){
+  descr(x, stats=c("min", "Q1", "mean","med", "Q3", "max", "IQR","sd"), transpose=TRUE)
+}
+```
+## Loading dataset and checking its dimension
+``````{r, warning=FALSE, message=FALSE}
+data = read.csv("https://raw.githubusercontent.com/vaksakalli/datasets/master/bank_marketing_full.csv", stringsAsFactors = TRUE)
+#Check data dimensions
+dim(data)
+```
+We see that data has been loaded with accurate dimensions from the csv file.
+
+## Taking random samples to check the data
+``````{r, warning=FALSE, message=FALSE}
+#Taking random sample of the data for checking
+data[sample(1:nrow(data),10),]
+```
+## Checking structure of the data
+``````{r, warning=FALSE, message=FALSE}
+str(data)
+```
+## Checking for missing values
+We see that there are no missing values in this data.
+```{r pressure,warning=FALSE, message=FALSE}
+#Total missing values in each column
+sapply(data, function(x) sum(is.na(x)))
+```
+## Dropping columns
+
+>There is an important note that comes with the dataset on "duration" feature saying this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Since we want to have a realistic predictive model, this feature will be dropped to avoid such an sensitive impact on the outcome. 
+
+```{r}
+data <- data %>% select(-duration)
+dim(data)
+```
+## Unusual values
+In pdays feature, there are some values labeled as 999. It means client was not previously contacted, and there are 39,673 rows that contain these values.This means over 96% of the clients in this data was not previously contacted. Thus, for the sake of simplicity, we transform this feature into a categorical feature with two levels. 0 = not previously contacted and 1 = have contacted.
+
+```{r}
+#count data with 999 values in pdays
+data %>% filter(pdays==999) %>% nrow()
+#changing pdays to Yes/No factor level
+data <- data %>% mutate (pdays =  if_else(data$pdays==999,0,1))
+data$pdays <- as.factor(data$pdays)
+levels(data$pdays)
+```
+## Reorder the level of some categorical features
+For quicker and easier read, we reorder and relabel some of the categorical features below.
+```{r}
+data$marital <- factor(data$marital,levels=c("single","married", "divorced", "unknown"),labels=c("single","married", "divorced", "unknown"))
+data$education <- factor(data$education,levels=c("illiterate", "basic.4y", "basic.6y", "basic.9y", "high.school", "professional.course","university.degree", "unknown"),labels=c("illiterate", "basic 4y", "basic 6y", "basic 9y", "high school", "professional course","university degree", "unknown"))
+data$month <- factor(data$month,levels=c("mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),labels=c("mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))
+data$day_of_week <- factor(data$day_of_week,levels=c("mon", "tue", "wed", "thu","fri"),labels=c("mon", "tue", "wed", "thu","fri"))
+data$pdays <- factor(data$pdays,levels=c("0","1"),labels=c('Not previously contacted','Have contacted'))
+
+str(data)
+```
+
+```{r}
+write.csv(data, 'data_clean.csv')
+```
+# 4. Descriptive Statistics
+## Numerical Features
+```{r, warning=FALSE, message=FALSE}
+#Selecting Numerical Columns
+numeric <- data %>% select_if(is.numeric)
+SummaryStats(numeric)
+```
+```{r, warning=FALSE, message=FALSE}
+#Gather the data into two columns
+df_num <- numeric %>% gather(features, value, 1:ncol(numeric))
+```
+## Box plots of each numerical features
+
+```{r fig.height=12, fig.width=10}
+ggplot(df_num, aes(x = value)) + geom_boxplot() + facet_wrap(~features, scales = "free", ncol = 2)+ labs(title="Box Plots of Numerical Features") + theme(plot.title=element_text(hjust=0.5,face="bold", size=14))
+```
+
+Based on box plots, we see that there are some outliers in age, campaign and previous features.However, those are not extreme values. Since we do not have enough evidence to remove these, the values will be kept as it is.
+
+## Categorical Features 
+```{r, warning=FALSE, message=FALSE}
+#Selection Categorical Columns
+categorical <- data %>% select_if(is.factor)
+
+for (i in 1:ncol(categorical)){
+  categorical_cols <- names(categorical)
+  cat(categorical_cols[i],":")
+  x <- data.frame(table(categorical[,i]))
+  names(x) <- NULL
+  print(x)
+  cat("\n")
+}
+```
+
+# 5. Data Exploration and Visualization
+## Univariate plots
+```{r, message=FALSE, warning=FALSE}
+target <- data %>% 
+  group_by(y) %>%
+  summarise(n = length(y)) %>% 
+  arrange(desc(y)) %>%
+  mutate(prop=round(n/nrow(data)*100,2))%>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+target
+```
+
+```{r fig.height=6, fig.width=10}
+p1 <- ggplot(target, aes(x="", y=prop, fill=y)) +geom_bar(width = 1, stat="identity", color="white") + coord_polar("y", start=0) + geom_text(aes(y=ypos, label=paste(prop, "%")), color="white")
+p1 + labs(title="Figure 1: Pie Chart of Target Variable", fill="Subscribed a term deposit?") + 
+  theme(axis.ticks=element_blank(),
+        axis.title=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        plot.title=element_text(hjust=0.5,face="bold", size=13)) +scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**From Figure 1, we can see that the dependent variable 'Y' has 88.73% "no" and 11.27% "yes". This suggests the data is *highly imbalanced* since one class is about 8 times higher than another.**
+
+```{r fig.height=6, fig.width=10}
+hist(data$age, ylab="Count", xlab="Age", main="Figure 2: Histogram of Age", col = "coral")
+```
+
+**Figure 2 shows that the distribution of age is right skewed which center of distribution around 30-40 years.**
+
+```{r}
+days <- data %>% group_by(month) %>%
+  summarise(count = n())
+
+p3 <- ggplot(days, aes(x=month, y=count))
+p3+geom_bar(stat="identity", fill = "dodgerblue3") +labs(title="Figure 3: Month of Last Contact")+theme(plot.title=element_text(hjust=0.5,face="bold", size=13))
+```
+
+**From Figure 3, we can see that large call volumes happened in May, while normal volumes were through June to August and the least one was during December. It should also be noted that Jan and Feb have either not been recorded or there were no calls during this time.**
+
+```{r}
+poutcome <- data %>% group_by(poutcome) %>%
+  summarise(count = n())
+
+p4 <- ggplot(poutcome, aes(x=poutcome, y=count))
+p4+geom_bar(stat="identity", fill = "brown") +labs(title="Figure 4: Outcome of Previous Marketing Campaign")+theme(plot.title=element_text(hjust=0.5,face="bold", size=13))
+```
+
+**From Figure 4, we can see that previous marketing outcome are largely nonexistent. Only a very few instances it has made an impact.**
+
+## Bivariate plots
+```{r}
+marital<- table(data$marital,data$y, dnn=c("marital", "outcome"))
+marital %>% knitr::kable( caption =  'Table 1: Marital Status on Outcome')
+marital_prop <- round(prop.table(marital,1),2)
+marital_prop %>% knitr::kable( caption =  'Table 2: Marital Status Proportion on Outcome')
+p5 <- ggplot(data, aes(x=marital, fill=y))
+p5+geom_bar(position="dodge") +
+  labs(title="Figure 5: Marital Status vs. Outcome",
+       x="Marital status",
+       fill="Outcome")+
+  theme(plot.title=element_text(hjust=0.5,face="bold", size=13))
+```
+
+**Figure 5 shows us the outcome of marketing campaign for each marital status. We can see that married people say yes to term deposit slightly more than single and divorced people. However, if we compare the proportion of "yes" and "no", people who are single subscribe to term deposit more than others.**
+
+```{r}
+p6 <- ggplot(data, aes(x=poutcome, y=previous))
+p6+geom_boxplot(fill="aquamarine1")+stat_summary(fun.y="mean", geom="point", colour="red")+
+  labs(title="Figure 6: Number of Contacts Performed before this Campaign and its Outcome",
+       x="previous outcome",
+       y="number of previous contacts")+
+  theme(plot.title=element_text(hjust=0.5,face="bold", size=12))
+```
+
+**In Figure 6, we can see the number of contacts performed before this campaign and its impact on outcome. The graph suggests that sometimes more number of contacts performed can be successful for the campaign**
+
+```{r}
+p7 <- ggplot(data, aes(age, fill=y))
+p7+geom_histogram(bins=35,alpha=0.8,color="white") +labs(title="Figure 7: Distribution of Age by the Outcome of Campaign", fill="Outcome")+theme(plot.title=element_text(hjust=0.5,face="bold", size=13))+scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**In Figure 7, we can see the impact of age on the outcome of the campaign. The distribution of age between the two outcomes are almost the same. That means age does not play significant role in the outcome of marketing campaign**
+
+```{r}
+job<- table(data$job,data$y, dnn=c("jobs", "outcome"))
+job_prop <- round(prop.table(job,1),2)
+job_prop %>% knitr::kable( caption =  'Table 3: Type of Jobs Proportion on Outcome')
+p8 <- ggplot(data, aes(x=job, fill=y))
+p8+geom_bar(position="dodge") +labs(title="Figure 8: Types of Jobs and Outcome",
+                                    x="Type of jobs", fill="Outcome")+theme(axis.text.x=element_text(angle=45,hjust=1),plot.title=element_text(hjust=0.5,face="bold", size=13)) + scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**In Figure 8, We can see the impact of jobs on the outcome of the campaign. Students and retired people have the highest proportion of success outcome followed by unemployed and admin.**
+
+```{r}
+education<- table(data$education,data$y, dnn=c("education", "outcome"))
+edu_prop <- round(prop.table(education,1),2)
+edu_prop %>% knitr::kable( caption =  'Table 4: Education Status Proportion on Outcome')
+p9 <- ggplot(data, aes(x=education, fill=y))
+p9+geom_bar(position="dodge") +labs(title="Figure 9: Education Status and Outcome",
+                                    x="education status", fill="Outcome")+theme(axis.text.x=element_text(angle=45,hjust=1),plot.title=element_text(hjust=0.5,face="bold", size=13)) + scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**From Table 4, we can see people who are illiterate have the highest proportion of success outcome followed by those with unknown education status and those with university degree. Figure 9 indicates that clients with university degree were contacted more than other people.**
+
+```{r}
+housing<- table(data$housing,data$y, dnn=c("Housing Loan", "Outcome"))
+housing_prop <- round(prop.table(housing,1),2)
+housing_prop %>% knitr::kable( caption =  'Table 5: Housing Loan Status Proportion on Outcome')
+
+p10 <- ggplot(data, aes(x=housing, fill=y))
+p10+geom_bar(position="dodge") +labs(title="Figure 10: Housing Loan and Outcome",
+                                    x="Housing Loan", fill="Outcome")+theme(axis.text.x=element_text(angle=45,hjust=1),plot.title=element_text(hjust=0.5,face="bold", size=13)) + scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**From Table 5, it seems housing loan status does not influence the outcome of the marketing campaign since the proportion of  success across the housing loan status is the same.**
+
+```{r}
+loan<- table(data$loan,data$y, dnn=c("loan", "outcome"))
+loan_prop <- round(prop.table(loan,1),2)
+loan_prop %>% knitr::kable( caption =  'Table 6: Personal Loan Status Proportion on Outcome')
+
+p11 <- ggplot(data, aes(x=loan, fill=y))
+p11+geom_bar(position="dodge") +labs(title="Figure 11: Personal Loan and Outcome",
+                                    x="Personal Loan", fill="Outcome")+theme(axis.text.x=element_text(angle=45,hjust=1),plot.title=element_text(hjust=0.5,face="bold", size=13)) + scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**From the Table 6 and Figure 11, we can see the same thing is for personal loan as housing loan status. The personal loan status does not seem to influence the outcome of the campaign although it is worth noting that most clients recorded in the data have no personal loan.**
+
+```{r}
+p12 <- ggplot(data, aes(x=default, fill=y))
+p12+geom_bar(position="dodge") +labs(title="Figure 12: Credit in Default and Outcome",
+                                    x="Credit in Default", fill="Outcome")+theme(axis.text.x=element_text(angle=45,hjust=1),plot.title=element_text(hjust=0.5,face="bold", size=13)) + scale_fill_manual(values=c("cyan4", "orangered2"))
+```
+
+**From Figure 12, we see that there are no clients reported with credit in default in the data.**
+
+```{r}
+contact<- table(data$contact,data$y, dnn=c("contact", "outcome"))
+contact_prop <- round(prop.table(contact,1),2)
+contact_prop %>% knitr::kable( caption =  'Table 6: Mode of Communication Proportion on Outcome')
+
+vcd::mosaic(contact, pop=FALSE, legend=TRUE, shade=TRUE, sub="Figure 13: Proportion of Mode of Communication vs. Outcome")
+```
+
+**Figure 13 diplays the impact of mode of contact (telephone/cellphone) on outcome. Using cellular to communicate with clients generates more success than using telephone.**
+
+## Three Variables Plots
+```{r}
+p14 <- ggplot(data, aes(x=loan,y=age, fill=y))
+p14+geom_boxplot()+labs(title="Figure 14: Age vs. Personal Loan by Outcome",
+                        y="Age",
+                        x="Personal Loan",
+                        fill="Outcome")+theme(plot.title=element_text(hjust=0.5,face="bold", size=12)) +scale_fill_manual(values=c("dodgerblue3", "orange"))
+```
+
+**Figure 14 illustrates the relationship of age and personal loan by the outcome of the marketing campaign. It can be seen that average age across all categories is almost the same at around 37-40 years old. Personal loan also does not affect the result of the outcome.**
+
+```{r}
+p15 <-ggplot(data, aes(x = job, fill = y)) + geom_bar(position = 'fill') + facet_grid(~marital)
+
+p15  + 
+  theme(axis.text.x = element_text(angle = 90, vjust=0.3, hjust = 1), plot.title=element_text(hjust=0.5,face="bold", size=12)) +
+  labs(title = 'Figure 15: Type of Jobs and Marital Status over Outcome',
+       x= "Type of jobs",
+       fill="Outcome")+
+  scale_fill_manual(values=c("deepskyblue3", "hotpink3"))+
+  coord_flip()
+```
+
+**Figure 15 indicates that students who are single and divorced subscribe to term deposit more than students who are married. Retired people who are married tend to say yes to the subscription more than retired who are single while single people in other job categories tend to subscribe to the term deposit than married people.**
+
+```{r}
+p16 <-ggplot(data, aes(x = contact, fill = y)) + geom_bar(position = 'fill') + facet_grid(~marital)
+
+p16  + 
+  theme(axis.text.x = element_text(angle = 90, vjust=0.3, hjust = 1), plot.title=element_text(hjust=0.5,face="bold", size=12,)) +
+  labs(title = 'Figure 16: Mode of Communication vs. Marital Status over Outcome',
+       x="mode of Communication")
+```
+
+**Figure 16 shows that using cellular as the type of communication has higher success rate. And for the clients with unknown marital status and single, the proportion of success outcome is higher than others.**
+
+```{r}
+p17 <-ggplot(data, aes(x = job, fill = y)) + geom_bar(position = 'fill') + facet_grid(~loan)
+
+p17  + 
+  theme(axis.text.x = element_text(angle = 90, vjust=0.3, hjust = 1), plot.title=element_text(hjust=0.5,face="bold", size=12)) +
+  labs(title = 'Figure 17: Type of Jobs and Personal Loan over Outcome',
+       x= "Type of jobs",
+       fill="Outcome")+
+  scale_fill_manual(values=c("coral2", "darkseagreen3"))+
+  coord_flip()
+```
+
+**In Figure 17, students and self-employed with personal loan tend to subscribe to term deposit more than those without personal loan. While the success rate of technicians, retired people, people in management, housemaids and admins are almost the same whether they have personal loan or not.**
+
+## Result and Discussion
+
+The analysis of the data revealed that among 41,188, only **4,640 of the clients (11.23%)** have subscribed to the term deposit while other **88.73%** said no. The average age of clients in the dataset is around **30-40 years**, and the last contact mostly happened in May. The highest proportion of the outcome of the **previous marketing was nonexistent** while the **success rate was also very low**.
+
+Most of clients contacted in the data **were married**, and the result showed **married people tend to subscribe** to term deposit more than others. However, if compared success-failure, single people had higher proportion of the success outcome. 
+
+If we look at the outcome of the marketing campaign across **education level, illiterate people followed by unknown education status and university degree has highest proportion in success rate**. 
+
+Among job categories, **students and  retired agreed to the subscription more than others**. In addition, single and divorced students agreed to subscribed to term deposit more than married students. And retired who were married tended to say yes to the subscription more than retired who were single, while single people in other job categories tended to subscribe to the term deposit than married people. Besides, students and self-employed with personal loan have subscribed to term deposit more than those without personal loan. More interestingly, **mode of communication** did influence the outcome of the campaign. Cellular was proved to have more impact on the success rate.
+
+On the other hand, age distributions of clients who have and have not subscribed to the bank term deposit were the same, meaning **age did not have any effect** on the outcome of the campaign. Furthermore, **housing and Personal loan also did not influence** the outcome of the marketing.
+
+# 6. Statistical Modelling
+
+## Reading the data
+Data prepared in the early stage is loaded into the dataframe **data_clean**. The first **ID** column has been removed as it is irrelevant to our analysis. "StringsAsFactors = True" is used to convert the categorical data into factors. We checked the structure of the data to make sure there is nothing odd and all categorical variables are  successfully converted to factor.
+``````{r, warning=FALSE, message=FALSE}
+#Read data in and Remove first column
+data_clean <- read.csv("data_clean.csv", stringsAsFactors = TRUE)[,-1]
+
+#Structure
+str(data_clean)
+```
+### Data Modiftication
+Since there is 41,188 rows in the cleaned dataset, which is quite big. We subset only 5000 rows tp perform the analysis by using random sampling method. Based on the summary statistics of the numerical features, we can see each feature has similar minimum, maximum, IQR and standard deviataion. Thus, it indicates the subset data is a good representation of the full data. 
+``````{r, warning=FALSE, message=FALSE}
+#subset data to 5000 rows
+set.seed(999)
+subsetData <- data_clean[sample(nrow(data_clean), 5000), ]
+
+#summary stats
+SummaryStats(data_clean)
+SummaryStats(subsetData)
+```
+Duplicate rows were checked and removed from the dataset.
+``````{r, warning=FALSE, message=FALSE}
+#duplicate rows
+sum(duplicated(subsetData))
+
+#remove duplicate rows
+subsetData <- unique(subsetData)
+sum(duplicated(subsetData))
+````
+## 6.1 Model Fitting
+#### Checking the dependant variable
+We checked our dependent variable before our analysis to ensure the responses are accurately captured.
+```{r, warning=FALSE, message=FALSE}
+contrasts(subsetData$y)
+```
+Here our dependent variable (Y) is binary and the values, **1 is the positive class** which denotes Yes & **0 is the negative class** which denotes No.
+
+#### 6.1.1 Manual Fitting with all variables
+```{r}
+#running logistic regression model with all variables
+full.fit<-glm(formula = y ~ ., family = binomial(link=logit), data = subsetData)
+summary(full.fit) #get NA's for loan unknown because the model has multicollinearity
+```
+It is worth noting that from the test results we can infer that the loan variable does not satisfy the multi-collinearity condition of Logistic Regression since it resulted in NA for loan unknown. Therefore, we remove loan feature and refit the model below.
+```{r}
+Model1.fit<-glm(formula = y ~ .-loan, family = binomial(link=logit), data = subsetData)
+summary(Model1.fit)
+```
+Based on the result of the full fitting, the model is
+
+$$ -242.6 - 0.01671 Age + 0.7568 jobretired - 0.62 educationbasic 6y - 0.6973 educationbasic 9y - 0.4388 educationhigh school - 1.347  contacttelephone - 0.5754  monthjun + 1.636  monthmar - 0.3621 monthmay - 0.9391  monthnov + 0.8085  poutcomenonexistent + 1.549  poutcomesuccess - 1.743 emp.var.rate + 2.346  cons.price.idx + 0.04286  cons.conf.idx -0.2946  day_of_weekmon - 0.04708  campaign + 0.5453 euribor3m $$
+
+#### 6.1.2. Feature Selection
+In this section, we perform feature selection using Learning Vector Quantization (LVQ) model. The variables are ranked based on its importance. As observed, the first important variable is nr.employed followed by euribor3m, emp.var.rate, contact, cons.price.idx and so on.
+```{r, eval = FALSE, warning=FALSE, message=FALSE}
+library(mlbench)
+library(caret)
+library(e1071)
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model
+model <- train(y~., data=subsetData, method="lvq", preProcess="scale", trControl=control)
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+#save.image("featureselection.Rdata")
+```
+
+```{r, eval = FALSE, warning=FALSE, message=FALSE}
+load("featureselection.Rdata")
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+```
+#### 6.1.3 Model Selection
+In this section, we will use both genetic search and forward selection to find the best model and compare the two later on. 
+##### a. Using Genetic Search
+In order to reduce run time, only the first 15 variables based on its importance found above are included in the model to run genetic search among main effects. Also, we used genetic search over exhaustive search as the latter would analyze 2^15 models resulting in longer computational time.
+```{r eval = FALSE}
+#Genetic search with 15 features by including ony main effects
+startTime = proc.time()
+set.seed(999)
+main.search <- glmulti(y = y ~ nr.employed + euribor3m + emp.var.rate + contact
+                         + cons.price.idx + previous + pdays + poutcome + default
+                         + campaign + education + cons.price.idx + marital + age + month,
+                         data = subsetData,
+                         fitfunction = "glm",
+                         level = 1, method = "g",
+                         crit ="aicc", family = binomial(link="logit"))
+
+#show elapsed time
+stopTime = proc.time()
+
+
+# save.image(file="Geneticsearchlevel1.RData")
+```
+
+```{r, warning=FALSE, message=FALSE}
+load(file="Maingeneticsearch.RData")
+elapsedTime = stopTime - startTime
+show(elapsedTime)
+main.search@formulas[[1]]
+```
+The five best model with their aicc scores in descending order are shown below. The best model has aicc of 2921.254 followed by 2921.388. The difference of aicc between each model is very small.
+```{r,warning=FALSE, message=FALSE}
+weightable(main.search)[1:5,]
+```
+```{r, warning=FALSE, message=FALSE}
+print(main.search)
+```
+The process of genetic search took about 14 minutes, which is relatively long but not too bad. The model with the smallest AICC value is selected, and it contains 10 features. We fit the model below.
+```{r, warning=FALSE, message=FALSE}
+#Best Model from genetic algorithm
+Model2.fit <- glm(formula = y ~ contact + poutcome + education + month + nr.employed + euribor3m + emp.var.rate 
+                  + cons.price.idx + campaign + age,
+              family = binomial(link=logit), data = subsetData)
+
+summary(Model2.fit)
+```
+Based on the result of the genetic search, the best model is
+
+$$ -106.8 - 1.133 x contacttelephone + 0.7120 x poutcomenonexistent + 1.806 x poutcomesuccess - 0.6499 x educationbasic 6y - 0.7107 x educationbasic 9y - 0.4229 x educationhigh school + 1.446 x monthmar - 0.4076 x monthmay - 1.051 x monthnov + 1.037 x euribor3m - 1.584 x emp.var.rate + 1.522 x cons.price.idx - 0.05221 x campaign - 0.007192 x age $$
+
+##### b. Using Forward Selection
+Since it would take enormous amounts of time and processing to run Interaction models in GLMulti function, forward selection is use to to find the best model that include both main effects and interactions.
+```{r eval = FALSE}
+startTime = proc.time()
+set.seed(999)
+# first fit the smallest and largest models to be considered
+empty.mod <- glm(formula = y ~ 1, family = binomial(link = logit), data = subsetData)
+full.mod <- glm(formula = y ~ .^2, family = binomial(link = logit), data = subsetData)
+
+# forward elimination:
+forw.sel <- step(object = empty.mod, 
+                 scope = list(upper = full.mod), 
+                 direction = "forward", 
+                 k = 2, trace = TRUE)
+#show elapsed time
+stopTime = proc.time()
+elapsedTime = stopTime - startTime
+show(elapsedTime)
+
+save.image(file="forwardselection.RData")
+```
+
+```{r, warning=FALSE, message=FALSE}
+load(file="forwardselection.RData")
+summary(forw.sel)
+```
+The procedure of forward selection takes about 7 minutes to complete, which is much quicker than the genetic search and the result also includes interactions between some variables. The best model selected by this method is: 
+
+$$ 69.73 - 0.01333 x nr.employed + 0.4169 x monthjul + 0.7378 x monthjun +  0.9927 x monthmar - 0.6793 x monthmay - 0.4931 x monthnov - 0.6396 x monthoct + 43.40 x poutcomesuccess - 43.54 x contacttelephone + 0.08251 x cons.conf.idx + 0.4707 x campaign - 0.3091 x 
+educationuniversity degree - 0.5439 x educationunknown - 2.282 x monthaug:contacttelephone -0.6.498 x educationbasic 6y - 0.7529 x educationbasic 9y - 0.4201 x educationhigh school - 3.214 x monthjul:contacttelephone - 2.242 x monthjun:contacttelephone - 6.314 x monthmar:contacttelephone - 2.571 x monthmay:contacttelephone - 5.064 x monthsep:contacttelephone + 0.01067 x nr.employed:contacttelephone + 3.259 x poutcomesuccess:contacttelephone + 0.2460 x contacttelephone:cons.conf.idx - 0.08937 x poutcomenonexistent:cons.conf.idx - 0.09647 x poutcomesuccess:cons.conf.idx - 0.009022 x nr.employed:poutcomesuccess $$
+
+### 6.1.4 Model Evaluation
+AIC, AICc and BIC are used to compare the three fitted models above. Based on the result, the three criteria do not agree on the best model. The model chosen by forward selection has the lowest AIC (2873.348) and AICc (2874.115) while the model chosen by genetic search has the lowest BIC (3090.281). That is because BIC tends toward smaller model, so it prefers the second model. Because both AIC and AICc agrees on the third model, which includes both main effects and interactions and the model has the second lowest BIC, we choose that model as the best one among all. 
+```{r, warning=FALSE, message=FALSE}
+#AICC and BIC
+AICc <- function(object) {
+  n <- length(object$y)
+  r <- length(object$coefficients)
+  AIC <- round(AIC(object),3)
+  AICc <- round(AIC(object) + 2*r*(r + 1)/(n - r - 1),3)
+  BIC <- round(BIC(object),3)
+  list(AIC= AIC,AICc = AICc, BIC = BIC)
+}
+
+Model_Values <- rbind(transpose(AICc(Model1.fit))[[1]],transpose(AICc(Model2.fit))[[1]],transpose(AICc(forw.sel))[[1]])
+
+Model_Name <- c("Full Model Fit","Generic Search Fit ","Forward Selection Fit")
+
+Model_Evaluation <- data.frame(Model_Name, Model_Values)
+colnames(Model_Evaluation) <- c("Model Name","AIC","AICc","BIC")
+Model_Evaluation
+```
+## 6.2 Residual Analysis
+
+It is always easier to analyze the data in explanatory variable pattern (EVP) form when evaluating how well a model for this type of response matches the data. For each of the unique sets of independent variables, this aggregated format has one row in the data set.
+
+Before evaluating the fit of the model, we converted the dataset to EVP form.
+
+
+```{r, warning=FALSE, message=FALSE}
+# EVP Form
+subsetData1 <- subsetData %>% mutate (y =  if_else(subsetData$y=="no",0,1))
+w <- aggregate(formula = y ~ nr.employed + month + poutcome + contact + cons.conf.idx + campaign + education + age + month:contact
+               + nr.employed:contact + poutcome:contact + contact:cons.conf.idx + poutcome:cons.conf.idx + nr.employed:poutcome + campaign:age 
+               + cons.conf.idx:campaign, 
+               data = subsetData1, FUN = sum)
+n <- aggregate(formula = y ~ nr.employed + month + poutcome + contact + cons.conf.idx + campaign + education + age + month:contact
+               + nr.employed:contact + poutcome:contact + contact:cons.conf.idx + poutcome:cons.conf.idx + nr.employed:poutcome + campaign:age 
+               + cons.conf.idx:campaign,
+               data = subsetData, FUN = length)
+
+w.n <- data.frame(w, trials = n$y, prop = round(w$y/n$y, 4))
+head(w.n)
+nrow(w.n)
+sum(w.n$trials)
+```
+We run the best model in EVP form, because statistical tests that analyse how well the model fits the data, work better with EVP form.
+
+```{r, warning=FALSE, message=FALSE}
+mod.prelim1 <- glm(formula =y/trials ~ nr.employed + month + poutcome + contact + cons.conf.idx + campaign + education + age + month:contact
+               + nr.employed:contact + poutcome:contact + contact:cons.conf.idx + poutcome:cons.conf.idx + nr.employed:poutcome + campaign:age 
+               + cons.conf.idx:campaign,
+                   family = binomial(link = logit), data = w.n, weights =
+                     trials)
+summary(mod.prelim1) #same results
+```
+
+We obtained the same parameter estimates as before. However, Null deviance, residual deviance and the AIC values are much lower.
+
+```{r, warning=FALSE, message=FALSE}
+s.res <- rstandard(model = mod.prelim1, type = "pearson")
+
+plot(x = w.n$nr.employed, y = s.res, ylim = c(min(-3, s.res), max(3, s.res)), ylab =
+       "Standardized Pearson residuals", xlab = "number of employees - quarterly indicator")
+
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+smooth.stand <- loess(formula = s.res ~ campaign, data = w.n, weights = trials)
+# Make sure that loess estimates are ordered by "X" for the plots, so that they are displayed properly
+order <- order(w.n$nr.employed)
+lines(x = w.n$nr.employed[order], y = predict(smooth.stand)[order], lty = "solid", col = "red", lwd = 1)
+```
+For scatter plot of number of employees vs. standardized residuals, we can see there is only a few points out of lower bound +-2 at smaller value of number of employess. However, as the number of employees gets to 5100 and larger, there are a lot more points get out of upper bound (larger than 3). 
+```{r,warning=FALSE, message=FALSE}
+s.res <- rstandard(model = mod.prelim1, type = "pearson")
+
+plot(x = w.n$campaign, y = s.res, ylim = c(min(-3, s.res), max(3, s.res)), ylab =
+       "Standardized Pearson residuals", xlab = "Campaign")
+
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+smooth.stand <- loess(formula = s.res ~ campaign, data = w.n, weights = trials)
+# Make sure that loess estimates are ordered by "X" for the plots, so that they are displayed properly
+order <- order(w.n$campaign)
+lines(x = w.n$campaign[order], y = predict(smooth.stand)[order], lty = "solid", col = "red", lwd = 1)
+```
+For the residual plot of campaign (number of called peformed during this campaign) shows that the residuals are dispersed at the lower values and get out of bound +-3, especially the upper bound. But at the higher number of called performed, all the residuals tend gather around 0 and follow the straigh red line.
+```{r, warning=FALSE, message=FALSE}
+s.res <- rstandard(model = mod.prelim1, type = "pearson")
+
+plot(x = w.n$age, y = s.res, ylim = c(min(-3, s.res), max(3, s.res)), ylab =
+       "Standardized Pearson residuals", xlab = "Age")
+
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+smooth.stand <- loess(formula = s.res ~ campaign, data = w.n, weights = trials)
+# Make sure that loess estimates are ordered by "X" for the plots, so that they are displayed properly
+order <- order(w.n$age)
+lines(x = w.n$age[order], y = predict(smooth.stand)[order], lty = "solid", col = "red", lwd = 1)
+```
+The residuals of age feature stays quite well within the lower bound of -3, but get quite far out of upper bound of 3. However, as observed, most of the residuals are gathered around 0 and follow the straight line. 
+```{r, warning=FALSE, message=FALSE}
+s.res <- rstandard(model = mod.prelim1, type = "pearson")
+
+plot(x = w.n$age, y = s.res, ylim = c(min(-3, s.res), max(3, s.res)), ylab =
+       "Standardized Pearson residuals", xlab = "Age")
+
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+smooth.stand <- loess(formula = s.res ~ campaign, data = w.n, weights = trials)
+# Make sure that loess estimates are ordered by "X" for the plots, so that they are displayed properly
+order <- order(w.n$age)
+lines(x = w.n$age[order], y = predict(smooth.stand)[order], lty = "solid", col = "red", lwd = 1)
+```
+Since the residual of numerical features that we explore above do not meet the criteria, this may suggest a transformation is needed. Thus, we tend to explore the model with squared of the four numeric features. The fitted model results in AIC of 2870.1, which is a bit lower than the previous model. However, among the added squared terms, only squared $age$ has a significant coefficient. Therefore, we will refit the model with other three squared terms eliminated. 
+```{r, warning=FALSE, message=FALSE}
+Model4.fit <- glm(formula = y ~ nr.employed + month + poutcome + contact + cons.conf.idx + campaign + education + age
+                  + month:contact + nr.employed:contact + poutcome:contact + contact:cons.conf.idx + poutcome:cons.conf.idx
+                  + nr.employed:poutcome + campaign:age + cons.conf.idx:campaign
+                  + I(nr.employed^2) + I(cons.conf.idx^2) + I(campaign^2) + I(age^2), 
+              family = binomial(link=logit), data = subsetData)
+
+summary(Model4.fit)
+```
+The last model has the AIC of 2864.9, which is the lowest among the fitted models. 
+```{r, warning=FALSE, message=FALSE}
+Model5.fit <- glm(formula = y ~ nr.employed + month + poutcome + contact + cons.conf.idx + campaign + education + age
+                  + month:contact + nr.employed:contact + poutcome:contact + contact:cons.conf.idx + poutcome:cons.conf.idx
+                  + nr.employed:poutcome + campaign:age + cons.conf.idx:campaign
+                  + I(age^2), 
+              family = binomial(link=logit), data = subsetData)
+
+summary(Model5.fit)
+BIC(Model5.fit)
+```
+Hence, the final model is
+> 67.63 - 0.01262 x nr.employed + 0.6996 x monthjun +  0.8982 x monthmar - 0.6929 x monthmay - 0.5233 x monthnov - 0.6596 x monthoct + 43.04 x poutcomesuccess - 42.64 x contacttelephone + 0.07785 x cons.conf.idx - 0.5853 x educationbasic 6y - 0.7 x educationbasic 9y - 0.3753 x educationhigh school - 0.5.331 x educationunknown - 0.07804 x age + 0.0008287 x age^2 - 2.210 x monthaug:contacttelephone - 3.072 x monthjul:contacttelephone  - 2.160 x monthjun:contacttelephone - 5.928 x monthmar:contacttelephone - 2.453 x monthmay:contacttelephone - 4.946 x monthsep:contacttelephone + 0.01045 x nr.employed:contacttelephone + 3.093 x poutcomesuccess:contacttelephone + 0.2416 x contacttelephone:cons.conf.idx - 0.0878 x poutcomenonexistent:cons.conf.idx - 0.09657 x poutcomesuccess:cons.conf.idx - 0.008947 x nr.employed:poutcomesuccess
+
+## 6.3 Response Analysis
+Looking at our model, the variables Month & Age are significant and are easily interpretable.
+So we performed exploratory analysis on these two variables along with the response variable.
+
+```{r, warning=FALSE, message=FALSE}
+
+#Analyzing for Month
+month <- table(subsetData$month, subsetData$y)
+month_tab <- as.data.frame(prop.table(month, 2))
+colnames(month_tab) <-  c("Month", "y", "Percentage")
+
+month_tab$Month <- factor(month_tab$Month,levels=c("mar","apr","may","jun","jul","aug","sep","oct","nov","dec"))
+
+ggplot(month_tab, aes(x=Month, y=Percentage, fill=y)) +
+  geom_bar(stat="identity",position = position_dodge(), alpha = 0.75)+theme_minimal()+ 
+  xlab("Month")+
+  ylab("Percentage")
+```
+As we saw from the model, month-may had high significance. 
+The above plot confirms that, as majority of the successes and failures of Term Deposit subscription happened during May. 
+
+June and July saw the second and third highest values for successes and failures respectively. 
+
+## 6.4 Goodness of Fit
+GoF describes how well it fits a set of observations.
+```{r, warning=FALSE, message=FALSE}
+rdev <- Model5.fit$deviance # this is the residual deviance
+rdev
+dfr <- Model5.fit$df.residual # this is the residual degrees of freedom
+dfr
+
+ddf <- rdev/dfr 
+ddf
+thresh2 <- 1 + 2*sqrt(2/dfr) # Potential problem
+thresh3 <- 1 + 3*sqrt(2/dfr)
+
+gof <-c(ddf, thresh2, thresh3) # Good fit
+names(gof) <- c("Residual deviance/Df","Threshold2","Threshold3")
+gof
+```
+Residual deviance/df is less than both $1+ 2\sqrt{2/df}$ and $1+ 3\sqrt{2/df}$
+
+This indicates that model 5 has good fit, meaning the discrepancy between the observed values and the values expected under this model is very low.
+
+## 6.5 Confidence Interval
+```{r, warning=FALSE, message=FALSE}
+
+# Confidence Interval for age =50
+predict.data<-data.frame(age = 50)
+
+alpha<-0.05
+pred<-predict(object = glm(formula = y ~ age, 
+              family = binomial(link=logit), data = subsetData), newdata = predict.data, type = "link", se = TRUE)
+pred
+pi.hat<-exp(pred$fit)/(1+exp(pred$fit))
+pi.hat
+CI.link <-pred$fit + qnorm(p = c(alpha/2, 1-alpha/2))*pred$se
+CI.link
+CI.pi<-exp(CI.link)/(1+exp(CI.link))
+CI.pi
+round(data.frame(predict.data, pi.hat, lower = CI.pi[1], upper = CI.pi[2]),4)
+
+
+```
+The 95% Wald confidence interval for \pi is 0.1279 < π < 0.1159; thus, the probability of success for the term deposit subscription is very low for 50 years of age, for a model which has age as the only independent variable.
+
+## 6.6 Hypothesis Tests
+From previous section, we have got our final model from previous section as follows.
+
+logit ($\pi$) = $\beta_0$ + $\beta_1$ nr.employed + $\beta_2$ month + $\beta_3$ poutcome + $\beta_4$ contact + $\beta_5$ cons.conf.idx
+                    + $\beta_6$ campaign + $\beta_7$ education + $\beta_8$ age + $\beta_9$ month:contact + $\beta_10$ nr.employed:contact 
+                    + $\beta_11$ poutcome:contact + $\beta_12$ contact:cons.conf.idx + $\beta_13$ poutcome:cons.conf.idx 
+                    + $\beta_14$ nr.employed:poutcome + $\beta_15$ campaign:age + $\beta_16$ cons.conf.idx:campaign $$
+                    
+In this section, we perform hypothesis test on parameters of this final model as we are skeptical if campaign variable (number of calls performed during the campaign) really have interaction with other variables in the model. Therefore, there are 2 hypothesis tests to be performed here.
+
+Hypothesis Test 1: 
+H_0: $\beta15$ = 0 
+$$ H_a: $\beta15$ != 0 
+
+Hypothesis Test 2: 
+H_0: $\beta16$ = 0 
+$$ H_a: $\beta16$ != 0 
+```{r}
+Anova(Model5.fit, test="LR")
+```
+Based on the result of Anova test, $\beta_15$ has $-2log(\Lambda)$ =  1.366 and a p-value of 0.2425264, which is larger than 0.05. Thus, it is not statistically significant at 5% significance level. That means we fail to reject the null hypothesis that $\beta_15 = 0$.
+
+Moreover, $\beta_16$ has $-2log(\Lambda)$ =  2.299 and a p-value of 0.1294605 (> 0.05); hence, there is not statistically significant either. That suggests there is not enough evidence to reject the null hypotheis.
+
+From the result of the test, both interactions of campaign:age and cons.conf.idx:campaign can be removed from the final model, which has already been reflected in the formula of the final model. 
+
+## 6.7 Sensitivity Analysis
+
+```{r, warning=FALSE, message=FALSE}
+OR <- data.frame("Odd_Ratio" = c(exp(Model5.fit$coefficients[8]), exp(Model5.fit$coefficients[14]), exp(Model5.fit$coefficients[15])
+                                 , exp(Model5.fit$coefficients[24])),
+                 "1/OR" =  c(1/exp(Model5.fit$coefficients[8]), 1/exp(Model5.fit$coefficients[14]), 1/exp(Model5.fit$coefficients[15])
+                             , 1/exp(Model5.fit$coefficients[24])))
+colnames(OR) <- c("Odd Ratio","1/Odd Ratio")
+OR
+```
+From the displayed result, the odd ratio of monthmay is 0.5, which means if the last contact was in May, the odd of success will decrease about 0.5 time or the odd of failure will increase about 2 times. Moreover, the odd ratio of contacttelephone is 3.04x10^-19 meaning if the communication type was telephone, the odd of of failure will increase 3.28x10^18, which is very high.
+
+In addition, the odd ratio of cons.conf.idx and age is about 1, which indicates that an increase in consumer confidence index and age will not change the odd of success in y.
+
+# 7. Critique & Limitations
+
+The analysis is quite thorough since we fitted 3 different models including manual fitting including all features except loan, genetic search of all main effects and forward selection. The three models were compared based on AIC, AICc and BIC scores. The best model chosen has the lowest AIC and AICc value, and it includes both main effects and interactions. The best fitted model was selected by forward selection method, which took about 7 minutes to run. It is quite reasonable. The result of goodness of fit also indicates this is a good model for the data.
+
+The limitation of the analysis is AIC, AICc and BIC did not agree on the best model. The model with the second lowest BIC was selected because it has the lowest AIC and AICc. That means the model with lowest BIC could be the simplest model and best model. Moreover, running the genetic search using level of 2 to include interaction could result in a better model. However, due to time efficiency, we could not utilize it to find models with interactions as the computational time is too long. Additionally, only the subset data were used to fit the model to save computational time. If the entire dataset was used, the result could be different. 
+
+Despite this, we were able to subset our data and find appropriate models to predict the success/failure of the Bank Tele Marketing.
+
+# 8. Summary & Conclusion
+
+In this project we aimed to build a model to predict whether the client will subscribe to a term deposit and identify the main attributes that affect the subscription.
+
+Preliminary analysis of the data suggests that there are *several distinct factors* that leads to the success of bank marketing campaign. The type of jobs, level of education, marital status and mode of communication appeared to have some impacts on customer subscription to bank term deposit.
+
+Through data visualization, we found that most of the calls happened in May. Mode of communication had influence on the outcome of the campaign as Cellular was proved to have more impact on the success rate. Furthermore, illiterate people followed by unknown education status and university degree has highest proportion in success rate. And among job categories, students and retired agreed to the subscription more than others. However, age distributions of clients who have and have not subscribed to the bank term deposit were the same, meaning age did not have any effect on the outcome of the campaign. Furthermore, housing and Personal loan also did not influence the outcome of the marketing.
+
+In statistical modelling part, we compared different models such as 
+1. full fitted manual model
+2. feature selected models with genetic search and explored 
+3. interactions using froward selection.
+
+We evaluated all of these models and the results were evaluated. From this we converted the dataset into EVP form to get the summary of the model. We finally concluded that our best model is: 
+
+> 67.63 - 0.01262 x nr.employed + 0.6996 x monthjun +  0.8982 x monthmar - 0.6929 x monthmay - 0.5233 x monthnov - 0.6596 x monthoct + 43.04 x poutcomesuccess - 42.64 x contacttelephone + 0.07785 x cons.conf.idx - 0.5853 x educationbasic 6y - 0.7 x educationbasic 9y - 0.3753 x educationhigh school - 0.5.331 x educationunknown - 0.07804 x age + 0.0008287 x age^2 - 2.210 x monthaug:contacttelephone - 3.072 x monthjul:contacttelephone  - 2.160 x monthjun:contacttelephone - 5.928 x monthmar:contacttelephone - 2.453 x monthmay:contacttelephone - 4.946 x monthsep:contacttelephone + 0.01045 x nr.employed:contacttelephone + 3.093 x poutcomesuccess:contacttelephone + 0.2416 x contacttelephone:cons.conf.idx - 0.0878 x poutcomenonexistent:cons.conf.idx - 0.09657 x poutcomesuccess:cons.conf.idx - 0.008947 x nr.employed:poutcomesuccess
+
+Based on this model, we observed month of the contact, education, mode of contact have impact on the success of the campaign as the coefficients of these variables were found significant. This result is consistent with the what we found in phase 1. On that note, the coefficient of age is also significant, but when we looked at the odd ratio, it is 1, which suggests the odd of success is not influenced by the increase in age of customers. 
+
+In summary, firstly, it is more likely that clients would subscribe to a term deposit if the conversation happens in the month may. We also found that conversations happening over telephone decrease the odd of success as shown from our model.
+
+Our inference also concluded that contacting variety of educational groups will improve the subscription rate rather than just focusing on just one group.
